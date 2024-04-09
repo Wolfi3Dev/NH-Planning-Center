@@ -155,6 +155,9 @@ cython_debug/
 # File created when script runs
 *.txt
 
+# The old original code is not needed in the repo
+super-old.py
+
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
