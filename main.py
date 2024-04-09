@@ -1,6 +1,5 @@
 import datetime as dt
 import os
-
 import pypco
 from dotenv import load_dotenv
 
@@ -20,101 +19,63 @@ def main():
     print("--------------------------------")
     print("Checking for this week's plan...")
     print("--------------------------------")
-    print("test")
 
     # Base URL for all NHE Plans
     nhe_plans = '/services/v2/service_types/95532/plans/'
-    print(nhe_plans)
-    # Get Offset URL and most recent 15 plans starting at the farthest in the future
-    all_plans = PCO_KEY.get(nhe_plans)
-    number_of_plans = all_plans['meta']['total_count']
-    offset = number_of_plans - 15
-    offset_url = f"{nhe_plans}?offset={offset}"
-    get_plans_response = PCO_KEY.get(offset_url)
-    
-    # Get the current date and time and convert to epoch timestamp for the whole day
-    current = dt.datetime.now()
-    year, month, day, hour, minute = current.year, current.month, current.day, current.hour, current.minute
-    today = dt.datetime(year, month, day, 0, 0, 0).timestamp()
 
-    # Get the first service ID in the list and set the service id variable
-    service_id = get_plans_response['data'][0]['id']
+    # User input for the date
+    user_date = input("Enter the date (YYYY-MM-DD): ")
+    try:
+        date_obj = dt.datetime.strptime(user_date, "%Y-%m-%d")
+    except ValueError:
+        print("Invalid date format. Please enter date in YYYY-MM-DD format.")
+        return
 
-    # Retrieve the PCO plan date and convert to epoch timestamp
-    get_date_response = PCO_KEY.get(f"{nhe_plans}{service_id}")
-    get_date = get_date_response['data']['attributes']['sort_date']
-    pco_date = dt.datetime.strptime(get_date.split("T")[0], "%Y-%m-%d").timestamp()
-    this_week = pco_date  
+    # Convert user input date to ISO format
+    user_date_iso = date_obj.isoformat()
 
-    # Loop through all the plans, moving to the next one if it is behind us
-    while today >= this_week:
+    # Get plans for the specified date
+    plans_for_date_response = PCO_KEY.get(f"{nhe_plans}?filter[future_or_past]=future&filter[range_start]={user_date_iso}&filter[range_end]={user_date_iso}")
 
-        next_plan_response = PCO_KEY.get(f"/services/v2/service_types/95532/plans/{service_id}/next_plan")
-        next_plan = next_plan_response['data']['id']
-        previous_plan = PCO_KEY.get(f"/services/v2/service_types/95532/plans/{service_id}/previous_plan")
+    # Check if plans exist for the specified date
+    if not plans_for_date_response['data']:
+        print("No plans found for the specified date.")
+        return
 
-        get_date_response = PCO_KEY.get(f"{nhe_plans}{service_id}")
-      # You are hitting next_plan. Does it have a currunt_plan or something. Look at the url on 52. put That outside of the while loop. 
-      # Ahhh
-        get_date = get_date_response['data']['attributes']['sort_date']
-        pco_date = dt.datetime.strptime(get_date.split("T")[0], "%Y-%m-%d").timestamp()
-        this_week = pco_date 
+    print(f"Plan Date: {user_date}")
+    print("---------------------------")
 
-        service_id = next_plan
+    # Loop through each plan for the specified date
+    for plan in plans_for_date_response['data']:
+        plan_id = plan['id']
+        # Retrieve song information for the plan
+        list_of_items = PCO_KEY.get(f"{nhe_plans}{plan_id}/items")['data']
+        
+        # Filter items to only include those for the specified date
+        items_for_date = [item for item in list_of_items if item['attributes'].get('dates') == user_date]
 
-    is_correct = input(f"Is {get_date} the correct plan date? (y/n): ")
+        # Loop through each item in the plan for the specified date
+        for item in items_for_date:
+            # Check if the item is a song
+            if item['attributes']['item_type'] == "song":
+                try:
+                    song_id = item['relationships']['song']['data']['id']
+                    song_info = PCO_KEY.get(f'/services/v2/songs/{song_id}')
+                    song_attributes = song_info['data']['attributes']
 
-    if is_correct == "n":
-        service_id = input("Please enter the service ID: ")
-        print("---------------------------")
-        print("-------- Song Info --------")
-    else:
-        print("---------------------------")
-        print("-------- Song Info --------")
+                    song_name = song_attributes['title']
+                    author = song_attributes.get('author', '')
+                    song_copyright = song_attributes.get('copyright', '')
 
-    list_of_items = PCO_KEY.get(f"{nhe_plans}{service_id}/items")['data']
-    song_file_num = 0
-    song_number = 0
+                    print("Title:", song_name)
+                    print("Author:", author)
+                    print("Copyright:", song_copyright)
+                    print("---------------------------")
 
-    for x in list_of_items:
-        if x['attributes']['item_type'] == "song":
-            try:
-                song_id = x['relationships']['song']['data']['id']
-                song_info = PCO_KEY.get(f'/services/v2/songs/{song_id}')
-                song_attributes = song_info['data']['attributes']
+                except Exception as e:
+                    print(f"Error processing song: {e}")
 
-                song_name = song_attributes['title']
-                author = song_attributes['author']
-                song_copyright = song_attributes['copyright']
-
-                song_number += 1
-                song_file_num += 1
-
-                print("---------------------------")
-                print(song_name)
-
-                # Write song name to file
-                song_file = f"song{song_number}name.txt"
-                with open(song_file, "w") as f:
-                    f.write(song_name)
-
-                # Write author info to file
-                author_info = " ".join(
-                    [word.replace(',', '') for word in author.split() if word.lower() not in ['and', 'with']])
-                if author_info:
-                    print(author_info)
-                    with open(f"song{song_file_num}info.txt", "w") as f:
-                        f.write(author_info)
-
-                # Write copyright info to file
-                if song_copyright:
-                    copyright_info = " ".join(song_copyright.split()[:5])
-                    print(copyright_info)
-                    with open(f"song{song_file_num}info.txt", "a") as f:
-                        f.write(f"\n{copyright_info}")
-
-            except Exception as e:
-                print(f"Error processing song: {e}")
+    print("Song information has been displayed.")
 
 
 if __name__ == "__main__":
